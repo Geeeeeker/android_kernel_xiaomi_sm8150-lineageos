@@ -21,7 +21,7 @@ jobs:
         device:
           - raphael
     steps:
-      - name: 安装软件包
+      - name: 安装软件包（包括内核构建依赖）
         run: |
           sudo apt update > /dev/null
           sudo apt install -y \
@@ -30,7 +30,16 @@ jobs:
             binutils-arm-linux-gnueabi \
             device-tree-compiler \
             dos2unix \
-            make > /dev/null
+            make \
+            flex \
+            bison \
+            libssl-dev \
+            bc \
+            kmod \
+            cpio \
+            python3 \
+            python3-dev \
+            > /dev/null
 
       - name: 同步仓库
         uses: actions/checkout@v4
@@ -119,7 +128,7 @@ jobs:
             sed -i 's/^struct device \*get_xiaomi_touch_dev()/struct device *get_xiaomi_touch_dev(void)/' "$FILE"
           fi
 
-      # ========== 新增：轻量修复 raphael 相关设备树文件 ==========
+      # ========== 轻量修复 raphael 相关设备树文件 ==========
       - name: 清理 raphael 设备树源文件（BOM/换行符）
         working-directory: kernel
         run: |
@@ -140,6 +149,12 @@ jobs:
         working-directory: kernel
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- raphael_defconfig O=out
+
+      # 添加 scripts 构建步骤，确保 host 工具可用
+      - name: 构建 host 工具（scripts）
+        working-directory: kernel
+        run: |
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- scripts O=out -j$(nproc)
 
       - name: 编译所有设备树（忽略错误）
         working-directory: kernel
