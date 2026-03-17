@@ -21,7 +21,7 @@ jobs:
         device:
           - raphael
     steps:
-      - name: 安装软件包（包括内核构建依赖）
+      - name: 安装软件包（完整内核构建依赖）
         run: |
           sudo apt update > /dev/null
           sudo apt install -y \
@@ -39,6 +39,8 @@ jobs:
             cpio \
             python3 \
             python3-dev \
+            libyaml-dev \
+            build-essential \
             > /dev/null
 
       - name: 同步仓库
@@ -150,11 +152,11 @@ jobs:
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- raphael_defconfig O=out
 
-      # 添加 scripts 构建步骤，确保 host 工具可用
+      # 构建 host 工具（scripts），添加详细输出以便调试
       - name: 构建 host 工具（scripts）
         working-directory: kernel
         run: |
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- scripts O=out -j$(nproc)
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- scripts O=out -j$(nproc) V=1
 
       - name: 编译所有设备树（忽略错误）
         working-directory: kernel
@@ -172,7 +174,6 @@ jobs:
       - name: 验证 raphael 设备树是否生成
         working-directory: kernel
         run: |
-          # 检查 raphael 所需的设备树文件
           FILES_GENERATED=$(find out/arch/arm64/boot/dts -type f \( -name "raphael*.dtb" -o -name "raphael*.dtbo" -o -name "sm8150-xiaomi.dtb" \) 2>/dev/null | wc -l)
           if [ "$FILES_GENERATED" -eq 0 ]; then
             echo "❌ 错误：未找到任何 raphael 设备树文件，编译可能失败。"
