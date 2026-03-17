@@ -58,27 +58,19 @@ jobs:
           restore-keys: kernel-${{ matrix.device }}
           max-size: 5G
 
-      - name: 配置内核基础参数 (Kprobes/OverlayFS/LTO等)
+      - name: 配置内核基础参数
         working-directory: kernel
         run: |
           DEFCONFIG="arch/arm64/configs/raphael_defconfig"
-          
-          # 开启 Kprobes
           echo "CONFIG_MODULES=y" >> $DEFCONFIG
           echo "CONFIG_KPROBES=y" >> $DEFCONFIG
           echo "CONFIG_HAVE_KPROBES=y" >> $DEFCONFIG
           echo "CONFIG_KPROBE_EVENTS=y" >> $DEFCONFIG
-          
-          # 开启 OverlayFS
           echo "CONFIG_OVERLAY_FS=y" >> $DEFCONFIG
-          
-          # 禁用 LTO
           sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' $DEFCONFIG
           sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' $DEFCONFIG
           sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' $DEFCONFIG
           echo "CONFIG_LTO_NONE=y" >> $DEFCONFIG
-          
-          # 禁用 CC_WERROR
           echo "CONFIG_CC_WERROR=n" >> $DEFCONFIG
 
       - name: 配置 LXC 和 Docker 支持
@@ -88,7 +80,6 @@ jobs:
           rm -rf utils
           git clone https://github.com/tomxi1997/lxc-docker-support-for-android.git utils
 
-          # 移除 LXC 补丁中强制选中的越权语句
           sed -i '/select CFS_BANDWIDTH/d' utils/Kconfig
           sed -i '/select DOCKER_STATISTICS/d' utils/Kconfig
           sed -i '/select BLK_DEV_THROTTLING/d' utils/Kconfig
@@ -97,25 +88,17 @@ jobs:
           
           echo 'source "utils/Kconfig"' >> "Kconfig"
           echo "CONFIG_DOCKER=y" >> $DEFCONFIG
-          
-          # 在 defconfig 显式禁用会引发代码冲突的调度器特性
           echo "# CONFIG_CFS_BANDWIDTH is not set" >> $DEFCONFIG
           echo "# CONFIG_DOCKER_STATISTICS is not set" >> $DEFCONFIG
-
-          # 禁用偏执网络
           sed -i '/CONFIG_ANDROID_PARANOID_NETWORK/d' $DEFCONFIG
           echo "# CONFIG_ANDROID_PARANOID_NETWORK is not set" >> $DEFCONFIG
-          
-          # 显式禁用发生冲突的 Block 特性
           echo "# CONFIG_BLK_DEV_THROTTLING is not set" >> $DEFCONFIG
           echo "# CONFIG_CFQ_GROUP_IOSCHED is not set" >> $DEFCONFIG
 
-          # 修复内核源码自带的 QVR 设备树语法错误 (sdm845)
           sed -i '/sdm845-v2-qvr-evt.dtb/d' arch/arm64/boot/dts/qcom/Makefile
           sed -i '/qvr/d' arch/arm64/boot/dts/qcom/Makefile
           sed -i '/interposer/d' arch/arm64/boot/dts/qcom/Makefile
 
-          # 统一在此处应用 runc 补丁和 qtaguid 补丁
           chmod +x utils/runcpatch.sh
           if [ -f kernel/cgroup/cgroup.c ]; then
               sh utils/runcpatch.sh kernel/cgroup/cgroup.c
@@ -127,34 +110,30 @@ jobs:
               patch -p0 < utils/xt_qtaguid.patch
           fi
 
-      # ---------- 新增修复步骤 ----------
-      - name: 修复触摸屏驱动中的函数原型 (添加 void)
+      - name: 修复触摸屏驱动中的函数原型
         working-directory: kernel
         run: |
           FILE="drivers/input/touchscreen/xiaomi/xiaomi_touch.c"
           if [ -f "$FILE" ]; then
-            echo "正在修复 $FILE 中的函数原型..."
             sed -i 's/^struct class \*get_xiaomi_touch_class()/struct class *get_xiaomi_touch_class(void)/' "$FILE"
             sed -i 's/^struct device \*get_xiaomi_touch_dev()/struct device *get_xiaomi_touch_dev(void)/' "$FILE"
-            echo "修复完成。"
-          else
-            echo "警告：$FILE 不存在，跳过"
           fi
 
-      # ========== 新增：验证设备树编译 ==========
-      - name: 深度清理设备树源文件
+      # ========== 新增：轻量修复 raphael 相关设备树文件 ==========
+      - name: 清理 raphael 设备树源文件（BOM/换行符）
         working-directory: kernel
         run: |
-          find arch/arm64/boot/dts -type f \( -name "*.dts" -o -name "*.dtsi" \) -print0 | while IFS= read -r -d '' FILE; do
-            echo "清理: $FILE"
-            # 移除 UTF-8 BOM
-            sed -i '1s/^\xEF\xBB\xBF//' "$FILE"
-            # 转换为 Unix 换行符
-            dos2unix "$FILE"
-            # 过滤非打印字符（保留换行、制表符和可打印 ASCII）
-            tr -cd '\11\12\15\40-\176' < "$FILE" > "${FILE}.clean"
-            mv "${FILE}.clean" "$FILE"
-            echo >> "$FILE"  # 确保文件以换行结尾
+          FILES=(
+            "arch/arm64/boot/dts/qcom/sm8150-wcd.dtsi"
+            "arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael/raphael-pinctrl.dtsi"
+            "arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael/raphael-sm8150-overlay.dts"
+          )
+          for FILE in "${FILES[@]}"; do
+            if [ -f "$FILE" ]; then
+              echo "清理: $FILE"
+              sed -i '1s/^\xEF\xBB\xBF//' "$FILE"   # 移除 BOM
+              dos2unix "$FILE"                      # 转换换行符
+            fi
           done
 
       - name: 配置内核（用于设备树编译）
@@ -167,11 +146,19 @@ jobs:
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- dtbs O=out -k -j$(nproc) || true
 
+      - name: 列出输出目录（调试）
+        working-directory: kernel
+        run: |
+          echo "=== out 目录内容 ==="
+          ls -la out/ || echo "out 目录不存在"
+          echo "=== out/arch/arm64/boot/dts ==="
+          ls -la out/arch/arm64/boot/dts/ || echo "设备树目录不存在"
+
       - name: 验证 raphael 设备树是否生成
         working-directory: kernel
         run: |
           # 检查 raphael 所需的设备树文件
-          FILES_GENERATED=$(find out/arch/arm64/boot/dts -type f \( -name "raphael*.dtb" -o -name "raphael*.dtbo" -o -name "sm8150-xiaomi.dtb" \) | wc -l)
+          FILES_GENERATED=$(find out/arch/arm64/boot/dts -type f \( -name "raphael*.dtb" -o -name "raphael*.dtbo" -o -name "sm8150-xiaomi.dtb" \) 2>/dev/null | wc -l)
           if [ "$FILES_GENERATED" -eq 0 ]; then
             echo "❌ 错误：未找到任何 raphael 设备树文件，编译可能失败。"
             exit 1
