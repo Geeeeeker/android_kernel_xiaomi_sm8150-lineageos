@@ -1,4 +1,4 @@
-name: 编译内核 (raphael 设备树验证版)
+name: 编译内核 (raphael)
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  AOSP_TOOLCHAIN_BRANCH: android15
+  AOSP_TOOLCHAIN_BRANCH: android15        # 分支名不包含 "-release"
   AOSP_CLANG_VERSION: r498229b
 
 jobs:
@@ -18,36 +18,42 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        device:
-          - raphael
+        device: [raphael]
+
     steps:
-      - name: 安装软件包（完整内核构建依赖）
+      - name: 安装软件包
+        env:
+          # 合并两个工作流所需的包
+          PACKAGES: >-
+            ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+            device-tree-compiler gcc-aarch64-linux-gnu make dos2unix
         run: |
           sudo apt update > /dev/null
-          sudo apt install -y \
-            ccache \
-            binutils-aarch64-linux-gnu \
-            binutils-arm-linux-gnueabi \
-            device-tree-compiler \
-            dos2unix \
-            make \
-            flex \
-            bison \
-            libssl-dev \
-            bc \
-            kmod \
-            cpio \
-            python3 \
-            python3-dev \
-            libyaml-dev \
-            build-essential \
-            > /dev/null
+          sudo apt install -y ${{ env.PACKAGES }} > /dev/null
 
       - name: 同步仓库
         uses: actions/checkout@v4
         with:
           path: kernel
 
+      # ---------- 来自 tree.yml 的深度清理 ----------
+      - name: 深度清理所有相关设备树源文件
+        working-directory: kernel
+        run: |
+          find arch/arm64/boot/dts -type f \( -name "*.dts" -o -name "*.dtsi" \) -print0 | while IFS= read -r -d '' FILE; do
+            echo "正在清理: $FILE"
+            # 移除 UTF-8 BOM 头
+            sed -i '1s/^\xEF\xBB\xBF//' "$FILE"
+            # 转换为 Unix 换行符
+            dos2unix "$FILE"
+            # 过滤非打印字符（保留换行、制表符和可打印 ASCII）
+            tr -cd '\11\12\15\40-\176' < "$FILE" > "${FILE}.clean"
+            mv "${FILE}.clean" "$FILE"
+            # 确保文件以换行结尾
+            echo >> "$FILE"
+          done
+
+      # ---------- 原有 Clang 缓存与下载 ----------
       - name: 缓存Clang
         id: cache-clang
         uses: actions/cache@v4
@@ -69,19 +75,28 @@ jobs:
           restore-keys: kernel-${{ matrix.device }}
           max-size: 5G
 
-      - name: 配置内核基础参数
+      # ---------- 内核配置修改 ----------
+      - name: 配置内核基础参数 (Kprobes/OverlayFS/LTO等)
         working-directory: kernel
         run: |
           DEFCONFIG="arch/arm64/configs/raphael_defconfig"
+          
+          # 开启 Kprobes
           echo "CONFIG_MODULES=y" >> $DEFCONFIG
           echo "CONFIG_KPROBES=y" >> $DEFCONFIG
           echo "CONFIG_HAVE_KPROBES=y" >> $DEFCONFIG
           echo "CONFIG_KPROBE_EVENTS=y" >> $DEFCONFIG
+          
+          # 开启 OverlayFS
           echo "CONFIG_OVERLAY_FS=y" >> $DEFCONFIG
+          
+          # 禁用 LTO
           sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' $DEFCONFIG
           sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' $DEFCONFIG
           sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' $DEFCONFIG
           echo "CONFIG_LTO_NONE=y" >> $DEFCONFIG
+          
+          # 禁用 CC_WERROR
           echo "CONFIG_CC_WERROR=n" >> $DEFCONFIG
 
       - name: 配置 LXC 和 Docker 支持
@@ -91,6 +106,7 @@ jobs:
           rm -rf utils
           git clone https://github.com/tomxi1997/lxc-docker-support-for-android.git utils
 
+          # 移除 LXC 补丁中强制选中的越权语句
           sed -i '/select CFS_BANDWIDTH/d' utils/Kconfig
           sed -i '/select DOCKER_STATISTICS/d' utils/Kconfig
           sed -i '/select BLK_DEV_THROTTLING/d' utils/Kconfig
@@ -99,17 +115,25 @@ jobs:
           
           echo 'source "utils/Kconfig"' >> "Kconfig"
           echo "CONFIG_DOCKER=y" >> $DEFCONFIG
+          
+          # 在 defconfig 显式禁用会引发代码冲突的调度器特性
           echo "# CONFIG_CFS_BANDWIDTH is not set" >> $DEFCONFIG
           echo "# CONFIG_DOCKER_STATISTICS is not set" >> $DEFCONFIG
+
+          # 禁用偏执网络
           sed -i '/CONFIG_ANDROID_PARANOID_NETWORK/d' $DEFCONFIG
           echo "# CONFIG_ANDROID_PARANOID_NETWORK is not set" >> $DEFCONFIG
+          
+          # 显式禁用发生冲突的 Block 特性
           echo "# CONFIG_BLK_DEV_THROTTLING is not set" >> $DEFCONFIG
           echo "# CONFIG_CFQ_GROUP_IOSCHED is not set" >> $DEFCONFIG
 
+          # 修复内核源码自带的 QVR 设备树语法错误 (sdm845)
           sed -i '/sdm845-v2-qvr-evt.dtb/d' arch/arm64/boot/dts/qcom/Makefile
           sed -i '/qvr/d' arch/arm64/boot/dts/qcom/Makefile
           sed -i '/interposer/d' arch/arm64/boot/dts/qcom/Makefile
 
+          # 统一在此处应用 runc 补丁和 qtaguid 补丁
           chmod +x utils/runcpatch.sh
           if [ -f kernel/cgroup/cgroup.c ]; then
               sh utils/runcpatch.sh kernel/cgroup/cgroup.c
@@ -121,70 +145,27 @@ jobs:
               patch -p0 < utils/xt_qtaguid.patch
           fi
 
-      - name: 修复触摸屏驱动中的函数原型
+      # ---------- 修复触摸屏驱动 ----------
+      - name: 修复触摸屏驱动中的函数原型 (添加 void)
         working-directory: kernel
         run: |
           FILE="drivers/input/touchscreen/xiaomi/xiaomi_touch.c"
           if [ -f "$FILE" ]; then
+            echo "正在修复 $FILE 中的函数原型..."
             sed -i 's/^struct class \*get_xiaomi_touch_class()/struct class *get_xiaomi_touch_class(void)/' "$FILE"
             sed -i 's/^struct device \*get_xiaomi_touch_dev()/struct device *get_xiaomi_touch_dev(void)/' "$FILE"
-          fi
-
-      # ========== 轻量修复 raphael 相关设备树文件 ==========
-      - name: 清理 raphael 设备树源文件（BOM/换行符）
-        working-directory: kernel
-        run: |
-          FILES=(
-            "arch/arm64/boot/dts/qcom/sm8150-wcd.dtsi"
-            "arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael/raphael-pinctrl.dtsi"
-            "arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael/raphael-sm8150-overlay.dts"
-          )
-          for FILE in "${FILES[@]}"; do
-            if [ -f "$FILE" ]; then
-              echo "清理: $FILE"
-              sed -i '1s/^\xEF\xBB\xBF//' "$FILE"   # 移除 BOM
-              dos2unix "$FILE"                      # 转换换行符
-            fi
-          done
-
-      - name: 配置内核（用于设备树编译）
-        working-directory: kernel
-        run: |
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- raphael_defconfig O=out
-
-      # 构建 host 工具（scripts），添加详细输出以便调试
-      - name: 构建 host 工具（scripts）
-        working-directory: kernel
-        run: |
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- scripts O=out -j$(nproc) V=1
-
-      - name: 编译所有设备树（忽略错误）
-        working-directory: kernel
-        run: |
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- dtbs O=out -k -j$(nproc) || true
-
-      - name: 列出输出目录（调试）
-        working-directory: kernel
-        run: |
-          echo "=== out 目录内容 ==="
-          ls -la out/ || echo "out 目录不存在"
-          echo "=== out/arch/arm64/boot/dts ==="
-          ls -la out/arch/arm64/boot/dts/ || echo "设备树目录不存在"
-
-      - name: 验证 raphael 设备树是否生成
-        working-directory: kernel
-        run: |
-          FILES_GENERATED=$(find out/arch/arm64/boot/dts -type f \( -name "raphael*.dtb" -o -name "raphael*.dtbo" -o -name "sm8150-xiaomi.dtb" \) 2>/dev/null | wc -l)
-          if [ "$FILES_GENERATED" -eq 0 ]; then
-            echo "❌ 错误：未找到任何 raphael 设备树文件，编译可能失败。"
-            exit 1
+            echo "修复完成。"
           else
-            echo "✅ 找到以下 raphael 设备树文件："
-            find out/arch/arm64/boot/dts -type f \( -name "raphael*.dtb" -o -name "raphael*.dtbo" -o -name "sm8150-xiaomi.dtb" \) -ls
+            echo "警告：$FILE 不存在，跳过"
           fi
 
-      # ========== 继续原有编译流程 ==========
-      - name: 编译完整内核
+      # ---------- 清理旧的构建输出 ----------
+      - name: 清理之前的构建输出
+        working-directory: kernel
+        run: rm -rf out
+
+      # ---------- 编译内核（包含所有设备树）----------
+      - name: 编译
         working-directory: kernel
         run: |
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
@@ -202,6 +183,26 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             raphael_defconfig all
 
+      # ---------- 收集 raphael 设备树文件（来自 tree.yml）----------
+      - name: 收集 raphael 设备树文件
+        working-directory: kernel
+        run: |
+          mkdir -p ../dtb_artifacts
+          find out/arch/arm64/boot/dts -type f \( \
+            -name "raphael*.dtb" -o \
+            -name "raphael*.dtbo" -o \
+            -name "sm8150-xiaomi.dtb" \
+          \) -exec cp {} ../dtb_artifacts/ \;
+          
+          if [ -z "$(ls -A ../dtb_artifacts)" ]; then
+            echo "❌ 错误：未找到任何 raphael 设备树文件"
+            exit 1
+          else
+            echo "✅ 找到以下设备树文件："
+            ls -la ../dtb_artifacts/
+          fi
+
+      # ---------- 打包 AnyKernel3 ----------
       - name: 打包(AnyKernel3)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3 --depth=1 ak3
@@ -223,6 +224,7 @@ jobs:
           EOF
           zip -qr9 Anykernel3-${{ matrix.device }}.zip * -x .git .github README.md *placeholder
 
+      # ---------- 打包 boot 镜像 ----------
       - name: 打包(boot)
         run: |
           git clone https://android.googlesource.com/platform/system/tools/mkbootimg --depth=1 mkbootimg
@@ -234,18 +236,26 @@ jobs:
           mv Image.gz-dtb out/kernel
           eval "./mkbootimg.py $mkbootimg_args -o boot-lineage-${{ matrix.device }}.img"
 
-      - name: 上传文件
+      # ---------- 上传三个产物 ----------
+      - name: 上传 AnyKernel3 包
         uses: actions/upload-artifact@v5
         with:
           name: kernel-${{ matrix.device }}-ak3
           path: ak3/Anykernel3-${{ matrix.device }}.zip
 
-      - name: 上传文件
+      - name: 上传 boot 镜像
         uses: actions/upload-artifact@v5
         with:
           name: kernel-${{ matrix.device }}-boot
           path: mkbootimg/boot-lineage-${{ matrix.device }}.img
 
+      - name: 上传 raphael 设备树文件
+        uses: actions/upload-artifact@v5
+        with:
+          name: kernel-${{ matrix.device }}-dtb
+          path: dtb_artifacts/
+
+  # ---------- 发布作业（原 15.yml 中的 release）----------
   release:
     name: 发布
     permissions: { contents: write }
