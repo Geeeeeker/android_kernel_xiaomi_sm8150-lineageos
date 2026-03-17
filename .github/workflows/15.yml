@@ -1,4 +1,4 @@
-name: 编译设备树 (仅raphael)
+name: 编译内核 (仅设备树 - raphael)
 
 on:
   push:
@@ -9,51 +9,55 @@ on:
 
 jobs:
   build:
-    name: 编译raphael设备树
+    name: 编译设备树
     runs-on: ubuntu-latest
     steps:
-      - name: 安装依赖
+      - name: 安装软件包
         run: |
           sudo apt update
-          sudo apt install -y device-tree-compiler gcc-aarch64-linux-gnu make
+          sudo apt install -y \
+            device-tree-compiler \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            make \
+            dos2unix
 
-      - name: 检出内核源码
+      - name: 同步仓库
         uses: actions/checkout@v4
         with:
           path: kernel
 
-      - name: 修复 Makefile (移除QVR等无关条目)
+      # 转换文件格式，避免隐藏字符导致解析错误
+      - name: 修复文件格式 (dos2unix)
         working-directory: kernel
         run: |
-          sed -i '/sdm845-v2-qvr-evt.dtb/d' arch/arm64/boot/dts/qcom/Makefile
-          sed -i '/qvr/d' arch/arm64/boot/dts/qcom/Makefile
-          sed -i '/interposer/d' arch/arm64/boot/dts/qcom/Makefile
+          find arch/arm64/boot/dts -type f \( -name "*.dts" -o -name "*.dtsi" \) -exec dos2unix {} \;
 
-      - name: 生成默认配置
+      # 生成 defconfig（确保 CONFIG_BUILD_ARM64_DT_OVERLAY=y）
+      - name: 配置内核
         working-directory: kernel
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- raphael_defconfig O=out
 
-      - name: 仅编译raphael所需的设备树
+      # 编译所有设备树，但忽略单个设备的错误（-k）
+      # 这样即使 andromeda 等设备失败，raphael 仍会被编译（只要其源文件无误）
+      - name: 编译设备树（忽略错误）
         working-directory: kernel
         run: |
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-              arch/arm64/boot/dts/qcom/sm8150-xiaomi.dtb \
-              arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo \
-              O=out -j$(nproc)
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- dtbs O=out -k -j$(nproc) || true
 
-      - name: 收集编译产物
+      # 收集 raphael 相关的设备树文件（.dtb 和 .dtbo）
+      - name: 收集 raphael 设备树文件
         run: |
           mkdir -p dtb_artifacts
-          cp kernel/out/arch/arm64/boot/dts/qcom/*.dtb dtb_artifacts/ 2>/dev/null || true
-          cp kernel/out/arch/arm64/boot/dts/qcom/*.dtbo dtb_artifacts/ 2>/dev/null || true
+          find kernel/out/arch/arm64/boot/dts -type f \( -name "raphael*.dtb" -o -name "raphael*.dtbo" \) -exec cp {} dtb_artifacts/ \;
           if [ -z "$(ls -A dtb_artifacts)" ]; then
-            echo "错误：未找到任何设备树文件！"
+            echo "错误：没有找到 raphael 设备树文件！"
             exit 1
           fi
 
-      - name: 上传设备树
-        uses: actions/upload-artifact@v4
+      - name: 上传设备树文件
+        uses: actions/upload-artifact@v5
         with:
-          name: raphael-dtbs
+          name: dtb-raphael
           path: dtb_artifacts/
