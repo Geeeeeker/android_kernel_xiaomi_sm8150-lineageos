@@ -1,4 +1,4 @@
-name: 编译 raphael 设备树
+name: 编译 raphael 设备树（深度清理）
 
 on:
   push:
@@ -26,41 +26,78 @@ jobs:
         with:
           path: kernel
 
-      - name: 修复 raphael-pinctrl.dtsi（移除 BOM 并转换格式）
+      - name: 深度清理 raphael 相关源文件
         working-directory: kernel
         run: |
-          FILE="arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael/raphael-pinctrl.dtsi"
-          if [ -f "$FILE" ]; then
-            echo "=== 修复前文件头（前5行） ==="
-            head -5 "$FILE"
-            # 移除可能的 UTF-8 BOM 头
-            sed -i '1s/^\xEF\xBB\xBF//' "$FILE"
-            # 转换为 Unix 换行符
-            dos2unix "$FILE"
-            echo "=== 修复后文件头（前5行） ==="
-            head -5 "$FILE"
-          else
-            echo "文件 $FILE 不存在，请检查路径"
-            exit 1
-          fi
+          # 定义需要清理的文件（包括可能被间接包含的公共文件）
+          FILES=(
+            "arch/arm64/boot/dts/qcom/sm8150-wcd.dtsi"
+            "arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael/raphael-pinctrl.dtsi"
+            "arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael/raphael-sm8150-overlay.dts"
+          )
+          for FILE in "${FILES[@]}"; do
+            if [ -f "$FILE" ]; then
+              echo "正在清理: $FILE"
+              
+              # 1. 移除 UTF-8 BOM 头
+              sed -i '1s/^\xEF\xBB\xBF//' "$FILE"
+              
+              # 2. 转换为 Unix 换行符
+              dos2unix "$FILE"
+              
+              # 3. 彻底清除所有非可打印字符（保留换行、制表符和标准 ASCII）
+              tr -cd '\11\12\15\40-\176' < "$FILE" > "${FILE}.clean"
+              mv "${FILE}.clean" "$FILE"
+              
+              # 4. 确保文件以换行结尾
+              echo >> "$FILE"
+              
+              echo "清理后前5行:"
+              head -5 "$FILE" | cat -A
+              echo "---"
+            else
+              echo "文件不存在: $FILE"
+            fi
+          done
 
-      - name: 配置内核（使用 raphael_defconfig）
+      - name: 配置内核
         working-directory: kernel
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- raphael_defconfig O=out
 
-      - name: 编译所有设备树（忽略错误，确保 raphael 被构建）
+      - name: 编译基础设备树 (sm8150-xiaomi.dtb)
         working-directory: kernel
         run: |
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- dtbs O=out -k -j$(nproc) || true
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+              arch/arm64/boot/dts/qcom/sm8150-xiaomi.dtb \
+              O=out -j$(nproc)
+
+      - name: 编译 raphael overlay
+        working-directory: kernel
+        run: |
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+              arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo \
+              O=out -j$(nproc)
+
+      - name: 验证生成的设备树文件
+        run: |
+          ls -la kernel/out/arch/arm64/boot/dts/qcom/
 
       - name: 收集 raphael 设备树文件
         run: |
           mkdir -p dtb_artifacts
-          find kernel/out/arch/arm64/boot/dts -type f \( -name "raphael*.dtb" -o -name "raphael*.dtbo" \) -exec cp {} dtb_artifacts/ \;
+          find kernel/out/arch/arm64/boot/dts -type f \( \
+            -name "raphael*.dtb" -o \
+            -name "raphael*.dtbo" -o \
+            -name "sm8150-xiaomi.dtb" \
+          \) -exec cp {} dtb_artifacts/ \;
+          
           if [ -z "$(ls -A dtb_artifacts)" ]; then
-            echo "错误：未找到任何 raphael 设备树文件"
+            echo "❌ 错误：未找到任何 raphael 设备树文件"
             exit 1
+          else
+            echo "✅ 找到以下设备树文件："
+            ls -la dtb_artifacts/
           fi
 
       - name: 上传设备树文件
