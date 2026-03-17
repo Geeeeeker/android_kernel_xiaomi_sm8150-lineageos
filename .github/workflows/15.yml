@@ -1,4 +1,3 @@
-
 - name: 配置内核
   working-directory: kernel
   run: |
@@ -7,14 +6,17 @@
 - name: 编译 raphael 设备树
   working-directory: kernel
   run: |
-    # 仅编译 raphael.dtb（根据需要可添加其他目标）
-    make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- arch/arm64/boot/dts/qcom/raphael.dtb O=out -j$(nproc)
+    make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+        arch/arm64/boot/dts/qcom/sm8150-xiaomi.dtb \
+        arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo \
+        O=out -j$(nproc)
 
 - name: 收集设备树文件
   run: |
     mkdir -p dtb_artifacts
-    find kernel/out/arch/arm64/boot/dts -name "raphael*.dtb" -exec cp {} dtb_artifacts/ \;
+    cp kernel/out/arch/arm64/boot/dts/qcom/*.dtb dtb_artifacts/ 2>/dev/null || true
+    cp kernel/out/arch/arm64/boot/dts/qcom/*.dtbo dtb_artifacts/ 2>/dev/null || true
     if [ -z "$(ls -A dtb_artifacts)" ]; then
-      echo "错误：没有找到 raphael 设备树文件！"
+      echo "错误：没有找到设备树文件！"
       exit 1
     fi
