@@ -1,4 +1,4 @@
-name: 编译内核 (仅设备树 - raphael)
+name: 编译 raphael 设备树
 
 on:
   push:
@@ -9,10 +9,9 @@ on:
 
 jobs:
   build:
-    name: 编译设备树
     runs-on: ubuntu-latest
     steps:
-      - name: 安装软件包
+      - name: 安装依赖
         run: |
           sudo apt update
           sudo apt install -y \
@@ -22,37 +21,45 @@ jobs:
             make \
             dos2unix
 
-      - name: 同步仓库
+      - name: 检出内核源码
         uses: actions/checkout@v4
         with:
           path: kernel
 
-      # 转换文件格式，避免隐藏字符导致解析错误
-      - name: 修复文件格式 (dos2unix)
+      - name: 修复 raphael-pinctrl.dtsi（移除 BOM 并转换格式）
         working-directory: kernel
         run: |
-          find arch/arm64/boot/dts -type f \( -name "*.dts" -o -name "*.dtsi" \) -exec dos2unix {} \;
+          FILE="arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael/raphael-pinctrl.dtsi"
+          if [ -f "$FILE" ]; then
+            echo "=== 修复前文件头（前5行） ==="
+            head -5 "$FILE"
+            # 移除可能的 UTF-8 BOM 头
+            sed -i '1s/^\xEF\xBB\xBF//' "$FILE"
+            # 转换为 Unix 换行符
+            dos2unix "$FILE"
+            echo "=== 修复后文件头（前5行） ==="
+            head -5 "$FILE"
+          else
+            echo "文件 $FILE 不存在，请检查路径"
+            exit 1
+          fi
 
-      # 生成 defconfig（确保 CONFIG_BUILD_ARM64_DT_OVERLAY=y）
-      - name: 配置内核
+      - name: 配置内核（使用 raphael_defconfig）
         working-directory: kernel
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- raphael_defconfig O=out
 
-      # 编译所有设备树，但忽略单个设备的错误（-k）
-      # 这样即使 andromeda 等设备失败，raphael 仍会被编译（只要其源文件无误）
-      - name: 编译设备树（忽略错误）
+      - name: 编译所有设备树（忽略错误，确保 raphael 被构建）
         working-directory: kernel
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- dtbs O=out -k -j$(nproc) || true
 
-      # 收集 raphael 相关的设备树文件（.dtb 和 .dtbo）
       - name: 收集 raphael 设备树文件
         run: |
           mkdir -p dtb_artifacts
           find kernel/out/arch/arm64/boot/dts -type f \( -name "raphael*.dtb" -o -name "raphael*.dtbo" \) -exec cp {} dtb_artifacts/ \;
           if [ -z "$(ls -A dtb_artifacts)" ]; then
-            echo "错误：没有找到 raphael 设备树文件！"
+            echo "错误：未找到任何 raphael 设备树文件"
             exit 1
           fi
 
