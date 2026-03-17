@@ -1,22 +1,59 @@
-- name: 配置内核
-  working-directory: kernel
-  run: |
-    make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- raphael_defconfig O=out
+name: 编译设备树 (仅raphael)
 
-- name: 编译 raphael 设备树
-  working-directory: kernel
-  run: |
-    make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-        arch/arm64/boot/dts/qcom/sm8150-xiaomi.dtb \
-        arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo \
-        O=out -j$(nproc)
+on:
+  push:
+    branches:
+      - dev/*
+      - stable/*
+  workflow_dispatch:
 
-- name: 收集设备树文件
-  run: |
-    mkdir -p dtb_artifacts
-    cp kernel/out/arch/arm64/boot/dts/qcom/*.dtb dtb_artifacts/ 2>/dev/null || true
-    cp kernel/out/arch/arm64/boot/dts/qcom/*.dtbo dtb_artifacts/ 2>/dev/null || true
-    if [ -z "$(ls -A dtb_artifacts)" ]; then
-      echo "错误：没有找到设备树文件！"
-      exit 1
-    fi
+jobs:
+  build:
+    name: 编译raphael设备树
+    runs-on: ubuntu-latest
+    steps:
+      - name: 安装依赖
+        run: |
+          sudo apt update
+          sudo apt install -y device-tree-compiler gcc-aarch64-linux-gnu make
+
+      - name: 检出内核源码
+        uses: actions/checkout@v4
+        with:
+          path: kernel
+
+      - name: 修复 Makefile (移除QVR等无关条目)
+        working-directory: kernel
+        run: |
+          sed -i '/sdm845-v2-qvr-evt.dtb/d' arch/arm64/boot/dts/qcom/Makefile
+          sed -i '/qvr/d' arch/arm64/boot/dts/qcom/Makefile
+          sed -i '/interposer/d' arch/arm64/boot/dts/qcom/Makefile
+
+      - name: 生成默认配置
+        working-directory: kernel
+        run: |
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- raphael_defconfig O=out
+
+      - name: 仅编译raphael所需的设备树
+        working-directory: kernel
+        run: |
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+              arch/arm64/boot/dts/qcom/sm8150-xiaomi.dtb \
+              arch/arm64/boot/dts/qcom/raphael-sm8150-overlay.dtbo \
+              O=out -j$(nproc)
+
+      - name: 收集编译产物
+        run: |
+          mkdir -p dtb_artifacts
+          cp kernel/out/arch/arm64/boot/dts/qcom/*.dtb dtb_artifacts/ 2>/dev/null || true
+          cp kernel/out/arch/arm64/boot/dts/qcom/*.dtbo dtb_artifacts/ 2>/dev/null || true
+          if [ -z "$(ls -A dtb_artifacts)" ]; then
+            echo "错误：未找到任何设备树文件！"
+            exit 1
+          fi
+
+      - name: 上传设备树
+        uses: actions/upload-artifact@v4
+        with:
+          name: raphael-dtbs
+          path: dtb_artifacts/
