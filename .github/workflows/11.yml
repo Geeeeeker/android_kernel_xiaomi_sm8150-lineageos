@@ -77,6 +77,10 @@ jobs:
           # 禁用 CC_WERROR
           echo "CONFIG_CC_WERROR=n" >> $DEFCONFIG
 
+          # ---- 新增：禁用 SELinux 和 SMACK 以减小内核体积 ----
+          echo "# CONFIG_SECURITY_SELINUX is not set" >> $DEFCONFIG
+          echo "# CONFIG_SECURITY_SMACK is not set" >> $DEFCONFIG
+
       - name: 配置 LXC 和 Docker 支持
         working-directory: kernel
         run: |
@@ -168,13 +172,14 @@ jobs:
             raphael_defconfig
 
           # 仅编译内核镜像 (Image)，跳过所有 dtbs
+          # ---- 新增 -mcmodel=large 解决重定位截断问题 ----
           make -j$(nproc --all) \
             CC="ccache clang" \
             ARCH=arm64 \
             LLVM=1 \
             LLVM_IAS=1 \
             O=out \
-            KCFLAGS="-Wno-error=strict-prototypes" \
+            KCFLAGS="-mcmodel=large -Wno-error=strict-prototypes" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             Image
