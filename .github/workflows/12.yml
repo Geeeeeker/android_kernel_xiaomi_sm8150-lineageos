@@ -77,6 +77,10 @@ jobs:
           # 禁用 CC_WERROR
           echo "CONFIG_CC_WERROR=n" >> $DEFCONFIG
 
+          # [新增] 禁用栈保护器（解决 -fstack-protector-strong 不支持的问题）
+          echo "# CONFIG_CC_STACKPROTECTOR_STRONG is not set" >> $DEFCONFIG
+          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> $DEFCONFIG
+
       - name: 配置 LXC 和 Docker 支持
         working-directory: kernel
         run: |
