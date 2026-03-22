@@ -1,59 +1,59 @@
-name: 编译内核 (使用预编译 dtb)
+name: "编译内核 (使用预编译 dtb)"
 
 on:
   push:
     branches:
-      - dev/*
-      - stable/*
+      - "dev/*"
+      - "stable/*"
   workflow_dispatch:
 
 env:
-  PROTON_CLANG_REPO: https://github.com/kmou424/proton-clang-11
-  PROTON_CLANG_BRANCH: 20200620
+  PROTON_CLANG_REPO: "https://github.com/kmou424/proton-clang-11"
+  PROTON_CLANG_BRANCH: "20200620"
 
 jobs:
   build:
-    name: 编译内核
+    name: "编译内核"
     permissions: { contents: write }
-    runs-on: ubuntu-latest
+    runs-on: "ubuntu-latest"
     strategy:
       matrix:
         device:
-          - raphael
+          - "raphael"
     steps:
-      - name: 安装软件包
+      - name: "安装软件包"
         env:
-          PACKAGES: ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+          PACKAGES: "ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi"
         run: |
           sudo apt update > /dev/null
           sudo apt install -y ${{ env.PACKAGES }} > /dev/null
 
-      - name: 同步仓库
-        uses: actions/checkout@v4
+      - name: "同步仓库"
+        uses: "actions/checkout@v4"
         with:
-          path: kernel
+          path: "kernel"
 
-      - name: 缓存Clang
-        id: cache-clang
-        uses: actions/cache@v4
+      - name: "缓存Clang"
+        id: "cache-clang"
+        uses: "actions/cache@v4"
         with:
-          path: clang
-          key: proton-clang-${{ env.PROTON_CLANG_BRANCH }}
+          path: "clang"
+          key: "proton-clang-${{ env.PROTON_CLANG_BRANCH }}"
 
-      - name: 下载Clang (proton-clang-11)
-        if: steps.cache-clang.outputs.cache-hit != 'true'
+      - name: "下载Clang (proton-clang-11)"
+        if: "steps.cache-clang.outputs.cache-hit != 'true'"
         run: |
-          git clone --depth 1 --branch ${{ env.PROTON_CLANG_BRANCH }} ${{ env.PROTON_CLANG_REPO }} clang
+          git clone --depth 1 --branch "${{ env.PROTON_CLANG_BRANCH }}" "${{ env.PROTON_CLANG_REPO }}" clang
 
-      - name: 缓存ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+      - name: "缓存ccache"
+        uses: "hendrikmuhs/ccache-action@v1.2"
         with:
-          key: kernel-${{ matrix.device }}
-          restore-keys: kernel-${{ matrix.device }}
-          max-size: 5G
+          key: "kernel-${{ matrix.device }}"
+          restore-keys: "kernel-${{ matrix.device }}"
+          max-size: "5G"
 
-      - name: 配置内核基础参数 (Kprobes/OverlayFS/LTO等)
-        working-directory: kernel
+      - name: "配置内核基础参数 (Kprobes/OverlayFS/LTO等)"
+        working-directory: "kernel"
         run: |
           DEFCONFIG="arch/arm64/configs/raphael_defconfig"
           
@@ -75,8 +75,8 @@ jobs:
           # 禁用 CC_WERROR
           echo "CONFIG_CC_WERROR=n" >> $DEFCONFIG
 
-      - name: 配置 LXC 和 Docker 支持
-        working-directory: kernel
+      - name: "配置 LXC 和 Docker 支持"
+        working-directory: "kernel"
         run: |
           DEFCONFIG="arch/arm64/configs/raphael_defconfig"
           rm -rf utils
@@ -121,8 +121,8 @@ jobs:
               patch -p0 < utils/xt_qtaguid.patch
           fi
 
-      - name: 修复触摸屏驱动中的函数原型 (添加 void)
-        working-directory: kernel
+      - name: "修复触摸屏驱动中的函数原型 (添加 void)"
+        working-directory: "kernel"
         run: |
           FILE="drivers/input/touchscreen/xiaomi/xiaomi_touch.c"
           if [ -f "$FILE" ]; then
@@ -134,9 +134,8 @@ jobs:
             echo "警告：$FILE 不存在，跳过"
           fi
 
-      # ---------- 核心修改：仅编译内核，使用预编译 dtb ----------
-      - name: 检查预编译设备树文件是否存在
-        working-directory: kernel
+      - name: "检查预编译设备树文件是否存在"
+        working-directory: "kernel"
         run: |
           PREBUILT_DTB="arch/arm64/boot/dts/qcom/sm8150-xiaomi.dtb"
           if [ ! -f "$PREBUILT_DTB" ]; then
@@ -145,8 +144,8 @@ jobs:
           fi
           echo "✅ 找到预编译设备树文件：$PREBUILT_DTB"
 
-      - name: 编译内核 (仅内核镜像，不编译设备树)
-        working-directory: kernel
+      - name: "编译内核 (仅内核镜像，不编译设备树)"
+        working-directory: "kernel"
         run: |
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
           export KBUILD_BUILD_USER=${{ github.repository_owner }}
@@ -188,8 +187,7 @@ jobs:
 
           echo "✅ 成功生成 out/arch/arm64/boot/Image.gz-dtb"
 
-      # ---------- AnyKernel3 打包 (始终可用) ----------
-      - name: 打包(AnyKernel3)
+      - name: "打包(AnyKernel3)"
         run: |
           git clone https://github.com/osm0sis/AnyKernel3 --depth=1 ak3
           cp kernel/out/arch/arm64/boot/Image.gz-dtb ak3/
@@ -210,10 +208,9 @@ jobs:
           EOF
           zip -qr9 Anykernel3-${{ matrix.device }}.zip * -x .git .github README.md *placeholder
 
-      # ---------- 打包 boot 镜像 (带错误处理，避免因 API 问题导致工作流失败) ----------
-      - name: 获取 LineageOS boot.img 下载链接
-        id: get_boot
-        working-directory: kernel
+      - name: "获取 LineageOS boot.img 下载链接"
+        id: "get_boot"
+        working-directory: "kernel"
         run: |
           set +e  # 临时关闭 errexit，我们自己处理错误
           API_URL="https://download.lineageos.org/api/v2/devices/${{ matrix.device }}/builds"
@@ -230,8 +227,8 @@ jobs:
           echo "boot_url=$BOOT_URL" >> $GITHUB_ENV
           echo "✅ 获取到 boot.img 链接：$BOOT_URL"
 
-      - name: 打包(boot) - 生成新 boot 镜像
-        if: env.boot_available == 'true'
+      - name: "打包(boot) - 生成新 boot 镜像"
+        if: "env.boot_available == 'true'"
         run: |
           git clone https://android.googlesource.com/platform/system/tools/mkbootimg --depth=1 mkbootimg
           cp kernel/out/arch/arm64/boot/Image.gz-dtb mkbootimg/
@@ -242,55 +239,54 @@ jobs:
           eval "./mkbootimg.py $mkbootimg_args -o boot-lineage-${{ matrix.device }}.img"
           echo "✅ 成功生成 boot-lineage-${{ matrix.device }}.img"
 
-      - name: 上传 AnyKernel3 包
-        uses: actions/upload-artifact@v5
+      - name: "上传 AnyKernel3 包"
+        uses: "actions/upload-artifact@v5"
         with:
-          name: kernel-${{ matrix.device }}-ak3
-          path: ak3/Anykernel3-${{ matrix.device }}.zip
+          name: "kernel-${{ matrix.device }}-ak3"
+          path: "ak3/Anykernel3-${{ matrix.device }}.zip"
 
-      - name: 上传 boot 镜像 (如果生成成功)
-        if: env.boot_available == 'true'
-        uses: actions/upload-artifact@v5
+      - name: "上传 boot 镜像 (如果生成成功)"
+        if: "env.boot_available == 'true'"
+        uses: "actions/upload-artifact@v5"
         with:
-          name: kernel-${{ matrix.device }}-boot
-          path: mkbootimg/boot-lineage-${{ matrix.device }}.img
+          name: "kernel-${{ matrix.device }}-boot"
+          path: "mkbootimg/boot-lineage-${{ matrix.device }}.img"
 
-  # ---------- Release 作业 (与原 15.yml 保持一致) ----------
   release:
-    name: 发布
+    name: "发布"
     permissions: { contents: write }
-    runs-on: ubuntu-latest
-    needs: build
+    runs-on: "ubuntu-latest"
+    needs: "build"
     steps:
-      - name: 获取构建产物
-        uses: actions/download-artifact@v6
+      - name: "获取构建产物"
+        uses: "actions/download-artifact@v6"
         with:
-          path: kernel
-          pattern: kernel-*
+          path: "kernel"
+          pattern: "kernel-*"
           merge-multiple: true
 
-      - name: 获取当前时间
-        id: time
+      - name: "获取当前时间"
+        id: "time"
         run: |
           echo "time=$(TZ='Asia/Shanghai' date -u +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
           echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
 
-      - name: 下载 KernelSU Manager
+      - name: "下载 KernelSU Manager"
         continue-on-error: true
-        uses: dawidd6/action-download-artifact@v11
+        uses: "dawidd6/action-download-artifact@v11"
         with:
-          repo: rsuntk/KernelSU
-          workflow_conclusion: success
-          name: manager
-          workflow: build-manager.yml
-          path: manager
+          repo: "rsuntk/KernelSU"
+          workflow_conclusion: "success"
+          name: "manager"
+          workflow: "build-manager.yml"
+          path: "manager"
 
-      - name: 发布到 GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: "发布到 GitHub Release"
+        uses: "softprops/action-gh-release@v2"
         with:
-          tag_name: rel-${{ steps.time.outputs.timestamp }}
-          name: Kernel build ${{ steps.time.outputs.time }}
-          prerelease: ${{ startsWith(github.ref_name, 'dev/') }}
+          tag_name: "rel-${{ steps.time.outputs.timestamp }}"
+          name: "Kernel build ${{ steps.time.outputs.time }}"
+          prerelease: "${{ startsWith(github.ref_name, 'dev/') }}"
           files: |
             kernel/*
             manager/*
