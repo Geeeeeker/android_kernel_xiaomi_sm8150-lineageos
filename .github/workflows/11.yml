@@ -21,6 +21,18 @@ jobs:
         device:
           - raphael
     steps:
+        - name: 缓存Clang
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: clang
+          key: proton-clang-${{ env.PROTON_CLANG_BRANCH }}
+
+      - name: 下载Clang (proton-clang-11)
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ${{ env.PROTON_CLANG_BRANCH }} ${{ env.PROTON_CLANG_REPO }} clang
+          
       - name: 安装软件包
         env:
           PACKAGES: ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
