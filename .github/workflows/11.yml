@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 env:
-  AOSP_TOOLCHAIN_BRANCH: android11        # 分支名不包含 "-release"
-  AOSP_CLANG_VERSION: r383902b
+  PROTON_CLANG_REPO: https://github.com/kmou424/proton-clang-11
+  PROTON_CLANG_BRANCH: 20200620
 
 jobs:
   build:
@@ -21,18 +21,6 @@ jobs:
         device:
           - raphael
     steps:
-        - name: 缓存Clang
-        id: cache-clang
-        uses: actions/cache@v4
-        with:
-          path: clang
-          key: proton-clang-${{ env.PROTON_CLANG_BRANCH }}
-
-      - name: 下载Clang (proton-clang-11)
-        if: steps.cache-clang.outputs.cache-hit != 'true'
-        run: |
-          git clone --depth 1 --branch ${{ env.PROTON_CLANG_BRANCH }} ${{ env.PROTON_CLANG_REPO }} clang
-          
       - name: 安装软件包
         env:
           PACKAGES: ccache binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
@@ -50,14 +38,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: clang
-          key: clang-${{ env.AOSP_TOOLCHAIN_BRANCH }}-${{ env.AOSP_CLANG_VERSION }}
+          key: proton-clang-${{ env.PROTON_CLANG_BRANCH }}
 
-      - name: 下载Clang
+      - name: 下载Clang (proton-clang-11)
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
-          mkdir -p clang &&
-          curl -LSs "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/${{ env.AOSP_TOOLCHAIN_BRANCH }}-release/clang-${{ env.AOSP_CLANG_VERSION }}.tar.gz" |
-          tar xz -C clang
+          git clone --depth 1 --branch ${{ env.PROTON_CLANG_BRANCH }} ${{ env.PROTON_CLANG_REPO }} clang
 
       - name: 缓存ccache
         uses: hendrikmuhs/ccache-action@v1.2
