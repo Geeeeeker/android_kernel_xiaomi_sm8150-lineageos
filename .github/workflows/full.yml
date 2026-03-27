@@ -1,4 +1,4 @@
-name: 编译内核
+name: 编译内核 (只编译Image.gz-dtb不含dtbo.img)
 
 on:
   push:
