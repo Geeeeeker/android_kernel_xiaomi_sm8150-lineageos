@@ -128,8 +128,33 @@ jobs:
           sed -i 's/CONFIG_MODVERSIONS=y/# CONFIG_MODVERSIONS is not set/' $DEFCONFIG
           echo "# CONFIG_MODVERSIONS is not set" >> $DEFCONFIG
 
-          # 禁用 RTIC（解决链接错误 relocation truncated）
+          # --- 自动禁用 RTIC 相关配置 ---
+          echo "Searching for RTIC-related Kconfig options..."
+          # 查找所有包含 "rtic" 的 Kconfig 文件，提取配置项名
+          RTIC_CONFIGS=$(find . -name "Kconfig" -exec grep -i -E "config[[:space:]]+.*rtic" {} \; | \
+                         sed -n 's/^[[:space:]]*config[[:space:]]\+\([A-Z0-9_]*\)/\1/p' | sort -u)
+          if [ -n "$RTIC_CONFIGS" ]; then
+            echo "Found RTIC configs: $RTIC_CONFIGS"
+            for cfg in $RTIC_CONFIGS; do
+              echo "# CONFIG_$cfg is not set" >> $DEFCONFIG
+            done
+          else
+            echo "No RTIC configs found in Kconfig, fallback to source patching."
+          fi
+          # 即使没有找到配置，也显式禁用常见名称（防止意外开启）
           echo "# CONFIG_RTIC is not set" >> $DEFCONFIG
+          echo "# CONFIG_RTIC_ENGINE is not set" >> $DEFCONFIG
+          echo "# CONFIG_RTIC_DRIVER is not set" >> $DEFCONFIG
+          echo "# CONFIG_RTIC_FW is not set" >> $DEFCONFIG
+
+          # --- 修补源码中的 RTIC 引用（后备方案）---
+          if [ -f security/selinux/hooks.c ]; then
+            echo "Patching security/selinux/hooks.c to remove RTIC references..."
+            # 注释掉所有包含 .bss.rtic 或 rtic 变量引用的行（谨慎操作，仅针对已知错误行）
+            sed -i '/\.bss\.rtic/d' security/selinux/hooks.c
+            sed -i '/extern.*rtic/d' security/selinux/hooks.c
+            sed -i '/\&\?rtic\b/d' security/selinux/hooks.c
+          fi
 
       - name: 配置 LXC 和 Docker 支持
         working-directory: kernel
