@@ -66,7 +66,7 @@ jobs:
           restore-keys: kernel-${{ matrix.device }}
           max-size: 5G
 
-      # 配置内核基础参数（包含所有新增选项，禁用 MODVERSIONS）
+      # 配置内核基础参数（包含所有新增选项，禁用 MODVERSIONS 和 RTIC）
       - name: 配置内核基础参数 (Kprobes/OverlayFS/LTO等)
         working-directory: kernel
         run: |
@@ -127,6 +127,9 @@ jobs:
           # 替换 MODVERSIONS
           sed -i 's/CONFIG_MODVERSIONS=y/# CONFIG_MODVERSIONS is not set/' $DEFCONFIG
           echo "# CONFIG_MODVERSIONS is not set" >> $DEFCONFIG
+
+          # 禁用 RTIC（解决链接错误 relocation truncated）
+          echo "# CONFIG_RTIC is not set" >> $DEFCONFIG
 
       - name: 配置 LXC 和 Docker 支持
         working-directory: kernel
