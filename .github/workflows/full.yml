@@ -66,149 +66,126 @@ jobs:
           restore-keys: kernel-${{ matrix.device }}
           max-size: 5G
 
-      # 强力清理 RTIC（配置+源码+引用）
-      - name: 彻底禁用 RTIC 相关代码
+      # 统一配置内核：清理 RTIC + 添加所需选项
+      - name: 配置内核
         working-directory: kernel
         run: |
-          echo "=== 1. 禁用所有 RTIC 相关配置 ==="
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export ARCH=arm64
+          export SUBARCH=arm64
+
           DEFCONFIG="arch/arm64/configs/raphael_defconfig"
-          # 在 defconfig 中禁用所有可能 RTIC 相关选项
+          cp $DEFCONFIG $DEFCONFIG.bak
+
+          # 1. 彻底清理 RTIC 相关
+          echo "=== 清理 RTIC 配置 ==="
+          sed -i '/RTIC/d' $DEFCONFIG
           for cfg in RTIC RTIC_ENGINE RTIC_DRIVER RTIC_FW RTIC_TEST RTIC_SELINUX SECURITY_RTIC; do
             echo "# CONFIG_$cfg is not set" >> $DEFCONFIG
           done
-          # 从 Kconfig 中提取所有包含 rtic 的配置项并禁用
           find . -name "Kconfig" -exec grep -i -E "(config|menuconfig)[[:space:]]+[A-Z0-9_]*rtic" {} \; | \
             sed -n 's/^[[:space:]]*\(config\|menuconfig\)[[:space:]]\+\([A-Z0-9_]*\).*/\2/p' | sort -u | \
             while read cfg; do
               echo "# CONFIG_$cfg is not set" >> $DEFCONFIG
             done
 
-          echo "=== 2. 彻底删除 RTIC 源文件和目录 ==="
-          # 删除所有可能的 RTIC 目录
+          echo "=== 删除 RTIC 源文件和目录 ==="
           rm -rf security/rtic drivers/rtic 2>/dev/null || true
-          # 删除所有包含 "rtic" 的文件（除了可能必要的头文件，但这里全删）
           find . -type f -name "*rtic*" -exec rm -f {} \; 2>/dev/null || true
-          # 删除所有目录名为 "rtic" 的目录
           find . -type d -name "rtic" -exec rm -rf {} \; 2>/dev/null || true
 
-          echo "=== 3. 清理 Makefile 中的 RTIC 引用 ==="
-          # 从所有 Makefile 中删除任何包含 rtic 的行
+          echo "=== 清理 Makefile 和 Kconfig 中的 RTIC 引用 ==="
           find . -name "Makefile" -exec sed -i '/rtic/d' {} \;
-
-          echo "=== 4. 清理 Kconfig 中的 RTIC 引用 ==="
-          # 从所有 Kconfig 中删除任何包含 rtic 的行（或者注释掉 source 语句）
           find . -name "Kconfig" -exec sed -i '/rtic/d' {} \;
 
-          echo "=== 5. 修补 security/selinux/hooks.c 中的 RTIC 引用 ==="
+          echo "=== 修补 security/selinux/hooks.c ==="
           HOOKS="security/selinux/hooks.c"
           if [ -f "$HOOKS" ]; then
-            # 删除所有 extern 声明和变量使用
             sed -i '/extern.*rtic_state/d' "$HOOKS"
             sed -i '/rtic_state/d' "$HOOKS"
-            # 如果有 #include "rtic.h"，也删除
             sed -i '/#include.*rtic/d' "$HOOKS"
-            echo "修补完成"
           fi
 
-          echo "=== 6. 生成并验证配置 ==="
-          # 生成配置并检查
-          make raphael_defconfig
-          echo "检查 .config 中 RTIC 相关选项："
-          grep -i "rtic" .config || echo "未发现 RTIC 配置项"
+          # 2. 添加所需内核配置选项
+          echo "=== 添加额外配置选项 ==="
+          cat >> $DEFCONFIG << EOF
+CONFIG_MODULES=y
+CONFIG_KPROBES=y
+CONFIG_HAVE_KPROBES=y
+CONFIG_KPROBE_EVENTS=y
+CONFIG_OVERLAY_FS=y
+CONFIG_LTO_NONE=y
+# CONFIG_LTO is not set
+# CONFIG_LTO_CLANG is not set
+# CONFIG_THINLTO is not set
+CONFIG_CC_WERROR=n
+CONFIG_ASHMEM=y
+CONFIG_SYSVIPC=y
+CONFIG_SYSVIPC_SYSCTL=y
+CONFIG_SYSVIPC_COMPAT=y
+CONFIG_EPOLL=y
+CONFIG_EVENTFD=y
+CONFIG_SIGNALFD=y
+CONFIG_INOTIFY_USER=y
+CONFIG_SHMEM=y
+CONFIG_TMPFS=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_TMPFS_XATTR=y
+CONFIG_USBIP_CORE=m
+CONFIG_USBIP_VHCI_HCD=m
+CONFIG_USBIP_HOST=m
+CONFIG_BACKLIGHT_CLASS_DEVICE=y
+CONFIG_BACKLIGHT_QCOM=y
+CONFIG_ZRAM=y
+CONFIG_ZRAM_DEF_COMP_ZSTD=y
+CONFIG_CRYPTO_ZSTD=y
+CONFIG_KERNELSU=y
+CONFIG_KPM=y
+CONFIG_KALLSYMS=y
+CONFIG_KALLSYMS_ALL=y
+# CONFIG_MODVERSIONS is not set
+EOF
 
-      # 配置内核基础参数（包含所有新增选项，禁用 MODVERSIONS）
-      - name: 配置内核基础参数 (Kprobes/OverlayFS/LTO等)
-        working-directory: kernel
-        run: |
-          DEFCONFIG="arch/arm64/configs/raphael_defconfig"
-          
-          # 开启 Kprobes
-          echo "CONFIG_MODULES=y" >> $DEFCONFIG
-          echo "CONFIG_KPROBES=y" >> $DEFCONFIG
-          echo "CONFIG_HAVE_KPROBES=y" >> $DEFCONFIG
-          echo "CONFIG_KPROBE_EVENTS=y" >> $DEFCONFIG
-          
-          # 开启 OverlayFS
-          echo "CONFIG_OVERLAY_FS=y" >> $DEFCONFIG
-          
-          # 禁用 LTO
-          sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' $DEFCONFIG
-          sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' $DEFCONFIG
-          sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' $DEFCONFIG
-          echo "CONFIG_LTO_NONE=y" >> $DEFCONFIG
-          
-          # 禁用 CC_WERROR
-          echo "CONFIG_CC_WERROR=n" >> $DEFCONFIG
+          # 3. 生成 .config 并进行 olddefconfig 更新
+          echo "=== 生成 .config ==="
+          make O=out $DEFCONFIG
+          scripts/config --file out/.config --disable LTO
+          scripts/config --file out/.config --disable LTO_CLANG
+          scripts/config --file out/.config --disable THINLTO
+          scripts/config --file out/.config --enable LTO_NONE
+          scripts/config --file out/.config --disable MODVERSIONS
+          make O=out olddefconfig
 
-          # 新增：用户要求的配置选项
-          echo "CONFIG_ASHMEM=y" >> $DEFCONFIG
-          echo "CONFIG_SYSVIPC=y" >> $DEFCONFIG
-          echo "CONFIG_SYSVIPC_SYSCTL=y" >> $DEFCONFIG
-          echo "CONFIG_SYSVIPC_COMPAT=y" >> $DEFCONFIG
-          echo "CONFIG_EPOLL=y" >> $DEFCONFIG
-          echo "CONFIG_EVENTFD=y" >> $DEFCONFIG
-          echo "CONFIG_SIGNALFD=y" >> $DEFCONFIG
-          echo "CONFIG_INOTIFY_USER=y" >> $DEFCONFIG
-          echo "CONFIG_SHMEM=y" >> $DEFCONFIG
-          echo "CONFIG_TMPFS=y" >> $DEFCONFIG
-          echo "CONFIG_TMPFS_POSIX_ACL=y" >> $DEFCONFIG
-          echo "CONFIG_TMPFS_XATTR=y" >> $DEFCONFIG
-
-          # USB/IP 配置
-          echo "CONFIG_USBIP_CORE=m" >> $DEFCONFIG
-          echo "CONFIG_USBIP_VHCI_HCD=m" >> $DEFCONFIG
-          echo "CONFIG_USBIP_HOST=m" >> $DEFCONFIG
-
-          # Backlight 支持
-          echo "CONFIG_BACKLIGHT_CLASS_DEVICE=y" >> $DEFCONFIG
-          echo "CONFIG_BACKLIGHT_QCOM=y" >> $DEFCONFIG
-
-          # zstd 压缩支持
-          echo "CONFIG_ZRAM=y" >> $DEFCONFIG
-          echo "CONFIG_ZRAM_DEF_COMP_ZSTD=y" >> $DEFCONFIG
-          echo "CONFIG_CRYPTO_ZSTD=y" >> $DEFCONFIG
-
-          # KernelSU 支持
-          echo "CONFIG_KERNELSU=y" >> $DEFCONFIG
-          echo "CONFIG_KPM=y" >> $DEFCONFIG
-          echo "CONFIG_KALLSYMS=y" >> $DEFCONFIG
-          echo "CONFIG_KALLSYMS_ALL=y" >> $DEFCONFIG
-
-          # 替换 MODVERSIONS
-          sed -i 's/CONFIG_MODVERSIONS=y/# CONFIG_MODVERSIONS is not set/' $DEFCONFIG
-          echo "# CONFIG_MODVERSIONS is not set" >> $DEFCONFIG
+          echo "=== 验证 RTIC 已禁用 ==="
+          grep -i "rtic" out/.config || echo "RTIC 配置已成功禁用"
 
       - name: 配置 LXC 和 Docker 支持
         working-directory: kernel
         run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
           DEFCONFIG="arch/arm64/configs/raphael_defconfig"
           rm -rf utils
           git clone https://github.com/tomxi1997/lxc-docker-support-for-android.git utils
-          # 移除 LXC 补丁中强制选中的越权语句
           sed -i '/select CFS_BANDWIDTH/d' utils/Kconfig
           sed -i '/select DOCKER_STATISTICS/d' utils/Kconfig
           sed -i '/select BLK_DEV_THROTTLING/d' utils/Kconfig
           sed -i '/select CFQ_GROUP_IOSCHED/d' utils/Kconfig
           sed -i '/select BRIDGE_VLAN_FILTERING/d' utils/Kconfig
-          
           echo 'source "utils/Kconfig"' >> "Kconfig"
+          scripts/config --file out/.config --enable DOCKER
           echo "CONFIG_DOCKER=y" >> $DEFCONFIG
-          
-          # 在 defconfig 显式禁用会引发代码冲突的调度器特性
           echo "# CONFIG_CFS_BANDWIDTH is not set" >> $DEFCONFIG
           echo "# CONFIG_DOCKER_STATISTICS is not set" >> $DEFCONFIG
-          # 禁用偏执网络
           sed -i '/CONFIG_ANDROID_PARANOID_NETWORK/d' $DEFCONFIG
           echo "# CONFIG_ANDROID_PARANOID_NETWORK is not set" >> $DEFCONFIG
-          
-          # 显式禁用发生冲突的 Block 特性
           echo "# CONFIG_BLK_DEV_THROTTLING is not set" >> $DEFCONFIG
           echo "# CONFIG_CFQ_GROUP_IOSCHED is not set" >> $DEFCONFIG
-          # 修复内核源码自带的 QVR 设备树语法错误 (sdm845)
           sed -i '/sdm845-v2-qvr-evt.dtb/d' arch/arm64/boot/dts/qcom/Makefile
           sed -i '/qvr/d' arch/arm64/boot/dts/qcom/Makefile
           sed -i '/interposer/d' arch/arm64/boot/dts/qcom/Makefile
-          # 统一在此处应用 runc 补丁和 qtaguid 补丁
           chmod +x utils/runcpatch.sh
           if [ -f kernel/cgroup/cgroup.c ]; then
               sh utils/runcpatch.sh kernel/cgroup/cgroup.c
@@ -219,8 +196,8 @@ jobs:
           if [ -f net/netfilter/xt_qtaguid.c ]; then
               patch -p0 < utils/xt_qtaguid.patch
           fi
+          make O=out olddefconfig
 
-      # 编译：使用现有的 .config（olddefconfig）
       - name: 编译
         working-directory: kernel
         run: |
@@ -230,7 +207,8 @@ jobs:
           export KBUILD_BUILD_TIMESTAMP=$(date -u -d "@$(git log -1 --format=%at)" +"%a %b %d %H:%M:%S %Z %Y")
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          # 使用已有的 .config（在彻底禁用 RTIC 步骤中已生成）
+          export ARCH=arm64
+          export SUBARCH=arm64
           make -j$(nproc --all) \
             CC="ccache clang" \
             ARCH=arm64 \
@@ -238,22 +216,19 @@ jobs:
             LLVM_IAS=1 \
             O=out \
             KCFLAGS="-Wno-unknown-warning-option" \
-            olddefconfig all
+            Image.gz-dtb dtbo.img modules
 
-      # 收集 USB/IP 内核模块（直接从编译输出目录复制）
       - name: 收集 USB/IP 内核模块
         run: |
           mkdir -p $GITHUB_WORKSPACE/usbip-out/modules
           cp kernel/out/drivers/usb/usbip/*.ko $GITHUB_WORKSPACE/usbip-out/modules/ || true
 
-      # 设置 QEMU 用户态支持
       - name: 设置 QEMU 用户态支持
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
-      # 编译 USB/IP 用户态工具（Docker 容器）
       - name: 编译 USB/IP 用户态工具 (Docker 容器)
         run: |
           mkdir -p usbip-out/{bin,libs}
@@ -281,11 +256,8 @@ jobs:
                 patchelf
               cd tools/usb/usbip
               ./autogen.sh
-              # 使用 -O0 完全禁用优化，避免 gcc 内部错误
               ./configure CFLAGS=\"-O0 -Wno-error\" --prefix=/usr
-              # 单线程编译
               make CFLAGS=\"-O0 -Wno-error\" -j1
-              # 复制二进制和库
               cp src/.libs/usbip /output/bin/
               cp src/.libs/usbipd /output/bin/
               cp libsrc/.libs/libusbip.so.0* /output/libs/
@@ -323,21 +295,18 @@ jobs:
               echo \"USB/IP user-space tools build and collection complete.\"
             "
 
-      # 打包 USB/IP 产物
       - name: 打包 USB/IP 产物
         run: |
           cd usbip-out
           tar czf ../usbip-arm64-bundle.tar.gz .
           cd ..
 
-      # 上传 USB/IP 捆绑包作为构建工件
       - name: 上传 USB/IP 捆绑包 (Artifact)
         uses: actions/upload-artifact@v4
         with:
           name: usbip-arm64-bundle
           path: usbip-arm64-bundle.tar.gz
 
-      # 下载 SukiSU-Ultra 管理器 APK
       - name: Download SukiSU-Ultra Manager APK
         run: |
           LATEST_RELEASE_URL=$(curl -s https://api.github.com/repos/SukiSU-Ultra/SukiSU-Ultra/releases/latest | grep "browser_download_url.*\.apk" | cut -d '"' -f 4)
@@ -354,7 +323,7 @@ jobs:
         run: |
           git clone https://github.com/osm0sis/AnyKernel3 --depth=1 ak3
           cp kernel/out/arch/arm64/boot/Image.gz-dtb ak3/
-          cp kernel/out/arch/arm64/boot/dtbo.img ak3/ || true   # dtbo 可选
+          cp kernel/out/arch/arm64/boot/dtbo.img ak3/ || true
           cp apk-output/SukiSU-Ultra-Manager.apk ak3/
           cd ak3
           cat >anykernel.sh <<EOF
