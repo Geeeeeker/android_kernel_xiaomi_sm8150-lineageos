@@ -132,6 +132,18 @@ jobs:
             -o arch/arm64/configs/raphael_defconfig
 
       # ========== 源码快速修复 ==========
+      - name: 修复触摸屏驱动中的函数原型 (添加 void)
+        working-directory: kernel
+        run: |
+          FILE="drivers/input/touchscreen/xiaomi/xiaomi_touch.c"
+          if [ -f "$FILE" ]; then
+            echo "正在修复 $FILE 中的函数原型..."
+            sed -i 's/^struct class \*get_xiaomi_touch_class()/struct class *get_xiaomi_touch_class(void)/' "$FILE"
+            sed -i 's/^struct device \*get_xiaomi_touch_dev()/struct device *get_xiaomi_touch_dev(void)/' "$FILE"
+            echo "修复完成。"
+          else
+            echo "警告：$FILE 不存在，跳过"
+          fi
       # ========== 新增：删除 andromeda 设备树，避免 DTS 语法错误 ==========
       - name: 删除 andromeda 设备树及相关 Makefile 引用
         working-directory: kernel
