@@ -50,7 +50,8 @@ jobs:
             binutils-aarch64-linux-gnu \
             binutils-arm-linux-gnueabi \
             gcc-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi
+            gcc-arm-linux-gnueabi \
+            dos2unix
 
       # ========== 设定 Android 版本、分支与工具链 ==========
       - name: 设定 Android 版本及对应分支、Clang
