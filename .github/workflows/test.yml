@@ -1,4 +1,4 @@
-name: 多系统版本，以此份为基础！boot需要修改为crdroid官方提供的img！编译内核 (KernelSU Next + SUSFS + LXC/Docker + USB/IP + RTL8188EUS)
+name: 仅供测试，从crdroid修改而来！boot需要修改为crdroid官方提供的img！编译内核 (KernelSU Next + SUSFS + LXC/Docker + USB/IP + RTL8188EUS)
 
 on:
   push:
