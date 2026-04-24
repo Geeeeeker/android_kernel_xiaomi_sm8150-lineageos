@@ -152,6 +152,11 @@ jobs:
           rm -rf arch/arm64/boot/dts/qcom/xiaomi/overlay/andromeda
           # 从所有设备树 Makefile 中移除包含 andromeda 的行，防止 make 引用已删除的文件
           find arch/arm64/boot/dts -type f -name "Makefile" -exec sed -i '/andromeda/d' {} \;
+      - name: 删除 cepheus 设备树及相关 Makefile 引用
+        working-directory: kernel
+        run: |
+          rm -rf arch/arm64/boot/dts/qcom/xiaomi/overlay/cepheus
+          find arch/arm64/boot/dts -type f -name "Makefile" -exec sed -i '/cepheus/d' {} \;
       # ========== Clang 工具链缓存与下载 ==========
       - name: 缓存 Clang 工具链
         id: cache-clang
