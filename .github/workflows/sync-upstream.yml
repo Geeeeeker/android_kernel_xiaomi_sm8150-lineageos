@@ -12,9 +12,9 @@ jobs:
       matrix:
         include:
           # 从 Laulan56 仓库同步的三个分支
-          - upstream_url: https://github.com/Laulan56/android_kernel_xiaomi_sm8150
+          - upstream_url: https://github.com/TingyiChen/kernel_xiaomi_sm8150
             branch: lineage-16.0
-          - upstream_url: https://github.com/Laulan56/android_kernel_xiaomi_sm8150
+          - upstream_url: https://github.com/TingyiChen/kernel_xiaomi_sm8150
             branch: lineage-17.1
           - upstream_url: https://github.com/Laulan56/android_kernel_xiaomi_sm8150
             branch: android14
