@@ -144,37 +144,21 @@ jobs:
           else
             echo "警告：$FILE 不存在，跳过"
           fi
-      - name: 清理无关 overlay 并补充缺失的公共设备树文件
+      - name: 深度修复 raphael 设备树源文件的低层编码问题
         working-directory: kernel
         run: |
-          # 下载缺失的 common dtsi
-          mkdir -p arch/arm64/boot/dts/qcom/xiaomi/overlay/common
-          curl -LSs -o arch/arm64/boot/dts/qcom/xiaomi/overlay/common/xiaomi-sm8150-common.dtsi \
-            https://raw.githubusercontent.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos/lineage-18.1/arch/arm64/boot/dts/qcom/xiaomi/overlay/common/xiaomi-sm8150-common.dtsi
-
-          # 删除除 raphael 和 common 之外的所有 overlay 目录
-          cd arch/arm64/boot/dts/qcom/xiaomi/overlay
-          for dir in */; do
-            [ "$dir" != "raphael/" ] && [ "$dir" != "common/" ] && rm -rf "$dir"
-          done
-          cd -
-
-          # 从 Makefile 中移除已删除 overlay 的引用
-          find arch/arm64/boot/dts -type f -name "Makefile" -exec sed -i '/nabu\|cepheus\|crux\|andromeda/d' {} \;
-      - name: 修复 raphael 设备树文件的语法问题
-        working-directory: kernel
-        run: |
-          find arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael -type f \( -name "*.dts" -o -name "*.dtsi" \) -print0 | while IFS= read -r -d '' file; do
-            echo "修复: $file"
-            # 移除 UTF-8 BOM 头
-            sed -i '1s/^\xEF\xBB\xBF//' "$file"
-            # 转换 Windows 换行符为 Unix
-            sed -i 's/\r$//' "$file"
-            # 过滤掉不可打印字符（保留必要空白符）
-            tr -cd '\11\12\15\40-\176' < "$file" > "${file}.clean"
-            mv "${file}.clean" "$file"
-            # 确保文件以换行结尾
-            echo >> "$file"
+          # 针对 raphael 覆盖目录下的所有 .dts/.dtsi 文件进行底层清理
+          find arch/arm64/boot/dts/qcom/xiaomi/overlay/raphael -type f \( -name "*.dts" -o -name "*.dtsi" \) -print0 | while IFS= read -r -d '' FILE; do
+            echo "修复: $FILE"
+            # 1. 删除 UTF-8 BOM 头
+            sed -i '1s/^\xEF\xBB\xBF//' "$FILE"
+            # 2. 转换 Windows 换行符为 Unix 风格
+            dos2unix "$FILE" 2>/dev/null || sed -i 's/\r$//' "$FILE"
+            # 3. 过滤不可打印字符（保留水平制表、换行、回车及 ASCII 可见部分）
+            tr -cd '\11\12\15\40-\176' < "$FILE" > "${FILE}.clean"
+            mv "${FILE}.clean" "$FILE"
+            # 4. 强制末尾换行，避免预处理级联出错
+            echo >> "$FILE"
           done
       # ========== Clang 工具链缓存与下载 ==========
       - name: 缓存 Clang 工具链
