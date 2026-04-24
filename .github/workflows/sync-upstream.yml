@@ -1,27 +1,14 @@
 # .github/workflows/sync-upstream.yml
-name: Sync Multiple Upstreams to Geeeeeker/android_kernel_xiaomi_sm8150-lineageos
+name: Sync Multiple Upstream Kernels to android_kernel_xiaomi_sm8150-lineageos
 
 on:
-  workflow_dispatch:
-  # schedule:
-  #   - cron: '0 0 * * *'
+  workflow_dispatch:                     # 允许手动运行
+#  schedule:
+#    - cron: '0 0 * * *'                 # 可选，每天 UTC 00:00 自动运行
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - upstream_repo: Laulan56/android_kernel_xiaomi_sm8150
-            branch: lineage-16.0
-          - upstream_repo: Laulan56/android_kernel_xiaomi_sm8150
-            branch: lineage-17.1
-          - upstream_repo: xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150-legacy
-            branch: lineage-20
-          - upstream_repo: Laulan56/android_kernel_xiaomi_sm8150
-            branch: android14
-
     steps:
       - name: 配置 Git
         run: |
@@ -34,18 +21,30 @@ jobs:
           cd workspace
           git init
 
-      - name: 添加上游和源仓库地址
+      - name: 添加所有远程仓库
         run: |
           cd workspace
-          git remote add upstream https://github.com/${{ matrix.upstream_repo }}.git
+          # 目标仓库（需要 PAT 认证才能推送）
           git remote add origin https://x-access-token:${{ secrets.SYNC_PAT }}@github.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos.git
+          # 上游仓库 1：lineage-16.0 与 lineage-17.1 的来源
+          git remote add kernel-sm8150 https://github.com/Geeeeeker/kernel_xiaomi_sm8150.git
+          # 上游仓库 2：lineage-20 的来源
+          git remote add sm8150-legacy https://github.com/xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150-legacy.git
+          # 上游仓库 3：android14 的来源
+          git remote add laulan https://github.com/Laulan56/android_kernel_xiaomi_sm8150.git
 
-      - name: 拉取上游分支
+      - name: 拉取所有需要的上游分支（浅克隆）
         run: |
           cd workspace
-          git fetch --depth 1 upstream ${{ matrix.branch }}
+          git fetch --depth 1 kernel-sm8150 lineage-16.0
+          git fetch --depth 1 kernel-sm8150 lineage-17.1
+          git fetch --depth 1 sm8150-legacy lineage-20
+          git fetch --depth 1 laulan android14
 
-      - name: 强制同步到目标分支
+      - name: 强制同步到目标仓库的对应分支
         run: |
           cd workspace
-          git push -f origin "refs/remotes/upstream/${{ matrix.branch }}:refs/heads/${{ matrix.branch }}"
+          git push -f origin refs/remotes/kernel-sm8150/lineage-16.0:refs/heads/lineage-16.0
+          git push -f origin refs/remotes/kernel-sm8150/lineage-17.1:refs/heads/lineage-17.1
+          git push -f origin refs/remotes/sm8150-legacy/lineage-20:refs/heads/lineage-20
+          git push -f origin refs/remotes/laulan/android14:refs/heads/android14
