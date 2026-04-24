@@ -132,7 +132,14 @@ jobs:
             -o arch/arm64/configs/raphael_defconfig
 
       # ========== 源码快速修复 ==========
-
+      # ========== 新增：删除 andromeda 设备树，避免 DTS 语法错误 ==========
+      - name: 删除 andromeda 设备树及相关 Makefile 引用
+        working-directory: kernel
+        run: |
+          # 删除整个 andromeda overlay 目录
+          rm -rf arch/arm64/boot/dts/qcom/xiaomi/overlay/andromeda
+          # 从所有设备树 Makefile 中移除包含 andromeda 的行，防止 make 引用已删除的文件
+          find arch/arm64/boot/dts -type f -name "Makefile" -exec sed -i '/andromeda/d' {} \;
       # ========== Clang 工具链缓存与下载 ==========
       - name: 缓存 Clang 工具链
         id: cache-clang
