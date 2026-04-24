@@ -1,57 +1,51 @@
-# .github/workflows/sync-upstream.yml
-name: Sync Multiple Upstream Kernels
+name: Sync Upstream Branches
 
 on:
-  workflow_dispatch:
-#  schedule:
-#    - cron: '0 0 * * *'
+  workflow_dispatch:          # 允许手动运行
+  # schedule:
+  #   - cron: '0 0 * * *'     # 可选：每天 UTC 00:00 自动运行
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # 源仓库 1：Laulan56/android_kernel_xiaomi_sm8150
+          - upstream_url: https://github.com/Laulan56/android_kernel_xiaomi_sm8150
+            branch: lineage-16.0
+          - upstream_url: https://github.com/Laulan56/android_kernel_xiaomi_sm8150
+            branch: lineage-17.1
+          - upstream_url: https://github.com/Laulan56/android_kernel_xiaomi_sm8150
+            branch: android14
+          # 源仓库 2：xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150-legacy
+          - upstream_url: https://github.com/xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150-legacy
+            branch: lineage-20
+
     steps:
       - name: 配置 Git
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      # ---- lineage-16.0（完整拉取，避免 shallow 对象缺失） ----
-      - name: 同步 lineage-16.0
+      - name: 创建临时工作目录
         run: |
-          mkdir -p sync-16.0 && cd sync-16.0
+          mkdir workspace
+          cd workspace
           git init
-          git remote add upstream https://github.com/Geeeeeker/kernel_xiaomi_sm8150.git
-          git remote add origin https://x-access-token:${{ secrets.SYNC_PAT }}@github.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos.git
-          # 完整拉取该分支，不再使用 --depth
-          git fetch --no-tags upstream lineage-16.0
-          git push -f origin refs/remotes/upstream/lineage-16.0:refs/heads/lineage-16.0
 
-      # ---- lineage-17.1（暂时保留浅克隆，如仍失败可同样修改） ----
-      - name: 同步 lineage-17.1
+      - name: 添加远程仓库
         run: |
-          mkdir -p sync-17.1 && cd sync-17.1
-          git init
-          git remote add upstream https://github.com/Geeeeeker/kernel_xiaomi_sm8150.git
+          cd workspace
+          # 目标仓库（你的仓库）
           git remote add origin https://x-access-token:${{ secrets.SYNC_PAT }}@github.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos.git
-          git fetch --depth 1 upstream lineage-17.1
-          git push -f origin refs/remotes/upstream/lineage-17.1:refs/heads/lineage-17.1
+          # 上游源仓库
+          git remote add upstream ${{ matrix.upstream_url }}
 
-      # ---- lineage-20 ----
-      - name: 同步 lineage-20
+      - name: 拉取并强制同步分支
         run: |
-          mkdir -p sync-20 && cd sync-20
-          git init
-          git remote add upstream https://github.com/xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150-legacy.git
-          git remote add origin https://x-access-token:${{ secrets.SYNC_PAT }}@github.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos.git
-          git fetch --depth 1 upstream lineage-20
-          git push -f origin refs/remotes/upstream/lineage-20:refs/heads/lineage-20
-
-      # ---- android14 ----
-      - name: 同步 android14
-        run: |
-          mkdir -p sync-14 && cd sync-14
-          git init
-          git remote add upstream https://github.com/Laulan56/android_kernel_xiaomi_sm8150.git
-          git remote add origin https://x-access-token:${{ secrets.SYNC_PAT }}@github.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos.git
-          git fetch --depth 1 upstream android14
-          git push -f origin refs/remotes/upstream/android14:refs/heads/android14
+          cd workspace
+          # 浅克隆，只获取该分支最新提交
+          git fetch --depth 1 upstream ${{ matrix.branch }}
+          # 强制推送到目标仓库的同名分支
+          git push -f origin refs/remotes/upstream/${{ matrix.branch }}:refs/heads/${{ matrix.branch }}
