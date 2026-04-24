@@ -15,17 +15,18 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      # ---- lineage-16.0 ----
+      # ---- lineage-16.0（完整拉取，避免 shallow 对象缺失） ----
       - name: 同步 lineage-16.0
         run: |
           mkdir -p sync-16.0 && cd sync-16.0
           git init
           git remote add upstream https://github.com/Geeeeeker/kernel_xiaomi_sm8150.git
           git remote add origin https://x-access-token:${{ secrets.SYNC_PAT }}@github.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos.git
-          git fetch --depth 1 upstream lineage-16.0
+          # 完整拉取该分支，不再使用 --depth
+          git fetch --no-tags upstream lineage-16.0
           git push -f origin refs/remotes/upstream/lineage-16.0:refs/heads/lineage-16.0
 
-      # ---- lineage-17.1 ----
+      # ---- lineage-17.1（暂时保留浅克隆，如仍失败可同样修改） ----
       - name: 同步 lineage-17.1
         run: |
           mkdir -p sync-17.1 && cd sync-17.1
