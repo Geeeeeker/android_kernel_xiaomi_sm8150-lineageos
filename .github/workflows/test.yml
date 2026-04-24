@@ -144,14 +144,22 @@ jobs:
           else
             echo "警告：$FILE 不存在，跳过"
           fi
-      - name: 清理所有非 raphael 的 overlay 设备树
+      - name: 清理无关 overlay 并补充缺失的公共设备树文件
         working-directory: kernel
         run: |
+          # 下载缺失的 common dtsi
+          mkdir -p arch/arm64/boot/dts/qcom/xiaomi/overlay/common
+          curl -LSs -o arch/arm64/boot/dts/qcom/xiaomi/overlay/common/xiaomi-sm8150-common.dtsi \
+            https://raw.githubusercontent.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos/lineage-18.1/arch/arm64/boot/dts/qcom/xiaomi/overlay/common/xiaomi-sm8150-common.dtsi
+
+          # 删除除 raphael 和 common 之外的所有 overlay 目录
           cd arch/arm64/boot/dts/qcom/xiaomi/overlay
           for dir in */; do
-            [ "$dir" != "raphael/" ] && rm -rf "$dir"
+            [ "$dir" != "raphael/" ] && [ "$dir" != "common/" ] && rm -rf "$dir"
           done
           cd -
+
+          # 从 Makefile 中移除已删除 overlay 的引用
           find arch/arm64/boot/dts -type f -name "Makefile" -exec sed -i '/nabu\|cepheus\|crux\|andromeda/d' {} \;
       # ========== Clang 工具链缓存与下载 ==========
       - name: 缓存 Clang 工具链
