@@ -144,7 +144,7 @@ jobs:
           else
             echo "警告：$FILE 不存在，跳过"
           fi
-      - name: 删除所有非 raphael 的 overlay 设备树
+      - name: 清理所有非 raphael 的 overlay 设备树
         working-directory: kernel
         run: |
           cd arch/arm64/boot/dts/qcom/xiaomi/overlay
@@ -152,7 +152,7 @@ jobs:
             [ "$dir" != "raphael/" ] && rm -rf "$dir"
           done
           cd -
-          find arch/arm64/boot/dts -type f -name "Makefile" -exec sed -i '/cepheus\|crux\|andromeda/d' {} \;
+          find arch/arm64/boot/dts -type f -name "Makefile" -exec sed -i '/nabu\|cepheus\|crux\|andromeda/d' {} \;
       # ========== Clang 工具链缓存与下载 ==========
       - name: 缓存 Clang 工具链
         id: cache-clang
