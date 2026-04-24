@@ -1,9 +1,9 @@
 name: Sync Upstream Branches
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:          # 手动触发
   # schedule:
-  #   - cron: '0 0 * * *'
+  #   - cron: '0 0 * * *'     # 如需每天自动同步取消注释
 
 jobs:
   sync:
@@ -11,12 +11,14 @@ jobs:
     strategy:
       matrix:
         include:
+          # 从 Laulan56 仓库同步的三个分支
           - upstream_url: https://github.com/Laulan56/android_kernel_xiaomi_sm8150
             branch: lineage-16.0
           - upstream_url: https://github.com/Laulan56/android_kernel_xiaomi_sm8150
             branch: lineage-17.1
           - upstream_url: https://github.com/Laulan56/android_kernel_xiaomi_sm8150
             branch: android14
+          # 从 xiaomi-sm8150-devs 仓库同步的一个分支
           - upstream_url: https://github.com/xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150-legacy
             branch: lineage-20
 
@@ -26,35 +28,27 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: 检查上游分支是否存在
-        id: check_branch
+      - name: 检查上游分支是否存在（可选但推荐）
+        id: check
         run: |
-          BRANCH_REF=$(git ls-remote --heads ${{ matrix.upstream_url }} refs/heads/${{ matrix.branch }})
-          if [ -z "$BRANCH_REF" ]; then
-            echo "::warning::上游仓库 ${{ matrix.upstream_url }} 不存在分支 ${{ matrix.branch }}，跳过同步"
-            echo "branch_exists=false" >> $GITHUB_OUTPUT
+          REF=$(git ls-remote --heads ${{ matrix.upstream_url }} refs/heads/${{ matrix.branch }})
+          if [ -z "$REF" ]; then
+            echo "::warning::上游无分支 ${{ matrix.branch }}，跳过"
+            echo "skip=true" >> $GITHUB_OUTPUT
           else
-            echo "branch_exists=true" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: 创建临时工作目录
-        if: steps.check_branch.outputs.branch_exists == 'true'
+      - name: 创建临时仓库并拉取推送
+        if: steps.check.outputs.skip != 'true'
         run: |
-          mkdir workspace
-          cd workspace
+          # 新建空仓库
+          mkdir workspace && cd workspace
           git init
-
-      - name: 添加远程仓库
-        if: steps.check_branch.outputs.branch_exists == 'true'
-        run: |
-          cd workspace
+          # 添加目标仓库（你的仓库）和上游仓库
           git remote add origin https://x-access-token:${{ secrets.SYNC_PAT }}@github.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos.git
           git remote add upstream ${{ matrix.upstream_url }}
-
-      - name: 拉取并强制同步分支
-        if: steps.check_branch.outputs.branch_exists == 'true'
-        run: |
-          cd workspace
-          # 完整拉取分支历史，避免浅克隆导致的 push 失败
-          git fetch upstream ${{ matrix.branch }}
-          git push -f origin refs/remotes/upstream/${{ matrix.branch }}:refs/heads/${{ matrix.branch }}
+          # 完整拉取上游分支（不加 --depth）
+          git fetch --no-tags upstream ${{ matrix.branch }}
+          # 强制推送到目标仓库同名分支，--no-thin 生成自包含 pack
+          git push -f --no-thin origin FETCH_HEAD:refs/heads/${{ matrix.branch }}
