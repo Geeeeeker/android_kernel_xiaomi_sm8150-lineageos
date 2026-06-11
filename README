@@ -11,6 +11,15 @@ lineage-16.0
 lineage-17.1
 https://github.com/Geeeeeker/kernel_xiaomi_sm8150
 
+docker相关
+https://github.com/Geeeeeker/android_kernel_oneplus_sm8150
+https://github.com/Geeeeeker/KernelSU_Kernel_Raphael
+https://github.com/Geeeeeker/kernelsu_xiaomi_polaris_action
+https://github.com/Geeeeeker/KernelSU-Next
+https://github.com/Geeeeeker/docker-lxc-action
+https://github.com/Geeeeeker/LXC-Docker-KernelSU_Action
+https://github.com/Geeeeeker/lxc-docker-support-for-android
+
 其他参考链接
 https://github.com/negrroo/LawRun_xiaomi_sm8150
 https://github.com/YangQi0408/kernel_xiaomi_sm8250_mod
