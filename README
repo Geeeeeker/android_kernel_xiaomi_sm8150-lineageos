@@ -11,12 +11,21 @@ lineage-16.0
 lineage-17.1
 https://github.com/Geeeeeker/kernel_xiaomi_sm8150
 
+
+crDroid for Mi 9T Pro
+https://crdroid.net/raphael/12
+https://github.com/Geeeeeker/kernel_xiaomi_raphael-pixel/actions
+
 sm8150
 https://github.com/Geeeeeker/android_kernel_xiaomi_sm8150-crdroid
 https://github.com/Geeeeeker/android_kernel_xiaomi_sm8150_419
 https://github.com/Geeeeeker/kernel_xiaomi_raphael-pixel
 https://github.com/Geeeeeker/android_kernel_xiaomi_sm8150-lineageos
-
+sm8150相关
+[KERNEL][A16][RAPHAEL]Antigravity kernel with docker support for raphael
+https://xdaforums.com/t/kernel-a16-raphael-antigravity-kernel-with-docker-support-for-raphael.4769126/
+Kernel tree for Redmi K20 Pro/Mi 9T Pro
+https://github.com/penglezos/kernel_xiaomi_raphael
 https://github.com/Geeeeeker/crdroid_lindroid_nabu
 
 docker相关
@@ -33,7 +42,6 @@ https://github.com/negrroo/LawRun_xiaomi_sm8150
 https://github.com/YangQi0408/kernel_xiaomi_sm8250_mod
 https://github.com/rsuntk?tab=repositories
 https://github.com/rrr333nnn333/BRENE
-
 
 Linux kernel
 ============
